@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>百度一下，你就知道</title>
-<link rel="apple-touch-icon" href="https://www.baidu.com/favicon.ico">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='36' fill='%234e6ef2'/><text x='90' y='108' text-anchor='middle' font-size='62' font-weight='700' fill='white' font-family='Arial'>Baidu</text><text x='90' y='148' text-anchor='middle' font-size='30' fill='white' font-family='Arial'>百度</text></svg>">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -855,7 +855,7 @@
       display: 'standalone',
       background_color: '#ffffff',
       theme_color: '#ffffff',
-      icons: [{ src: 'https://www.baidu.com/favicon.ico', sizes: '16x16', type: 'image/x-icon' }]
+      icons: [{ src: 'data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 180 180%27><rect width=%27180%27 height=%27180%27 rx=%2736%27 fill=%27%234e6ef2%27/><text x=%2790%27 y=%27108%27 text-anchor=%27middle%27 font-size=%2762%27 font-weight=%27700%27 fill=%27white%27 font-family=%27Arial%27>Baidu</text><text x=%2790%27 y=%27148%27 text-anchor=%27middle%27 font-size=%2730%27 fill=%27white%27 font-family=%27Arial%27>百度</text></svg>', sizes: '180x180', type: 'image/svg+xml' }]
     };
     const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
     const link = document.createElement('link');

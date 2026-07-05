@@ -497,14 +497,40 @@
     return bytes.buffer;
   }
 
+  /** Blob → Base64 */
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  /** Base64 → Blob */
+  function base64ToBlob(b64, type) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type });
+  }
+
   /** 导出所有漫画为加密备份文件 */
   async function exportBackup() {
     const comics = await getAllComics();
-    const backup = comics.map(c => ({
-      id: c.id, name: c.name,
-      data: bufToBase64(c.encryptedData),
-      addedAt: c.addedAt
-    }));
+    const backup = [];
+    for (const c of comics) {
+      const item = {
+        id: c.id, name: c.name,
+        data: bufToBase64(c.encryptedData),
+        addedAt: c.addedAt
+      };
+      if (c.cover) {
+        item.cover = await blobToBase64(c.cover);
+        item.coverType = c.cover.type || 'image/jpeg';
+      }
+      backup.push(item);
+    }
     const json = JSON.stringify(backup);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -519,7 +545,8 @@
     const list = JSON.parse(text);
     if (!db) await openDB();
     for (const item of list) {
-      await saveComic(item.name, base64ToBuf(item.data), null);
+      const coverBlob = item.cover ? base64ToBlob(item.cover, item.coverType || 'image/jpeg') : null;
+      await saveComic(item.name, base64ToBuf(item.data), coverBlob);
     }
     return list.length;
   }

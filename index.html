@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>百度一下，你就知道</title>
+<link rel="apple-touch-icon" href="https://www.baidu.com/favicon.ico">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+  /* ===== 百度伪装首页 ===== */
+  .baidu-page {
+    display: flex; flex-direction: column; align-items: center;
+    padding-top: 18vh; height: 100%; background: #fff;
+  }
+  .baidu-logo {
+    width: 160px; margin-bottom: 28px;
+    display: flex; justify-content: center;
+  }
+  .baidu-logo img { width: 130px; }
+  .search-wrapper {
+    width: 88%; max-width: 540px; position: relative;
+  }
+  .search-box {
+    width: 100%; height: 44px; padding: 0 50px 0 16px;
+    border: 1.5px solid #4e6ef2; border-radius: 22px;
+    font-size: 16px; outline: none; -webkit-appearance: none;
+  }
+  .search-btn {
+    position: absolute; right: 4px; top: 4px;
+    width: 62px; height: 36px; border: none; border-radius: 20px;
+    background: #4e6ef2; color: #fff; font-size: 15px; cursor: pointer;
+  }
+
+  /* ===== 通用 ===== */
+  .hidden { display: none !important; }
+  .page { height: 100%; overflow-y: auto; }
+
+  /* ===== 密码设置/输入页 ===== */
+  .auth-page {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100%; background: #f5f5f5;
+    padding: 20px;
+  }
+  .auth-card {
+    background: #fff; border-radius: 16px; padding: 32px 24px;
+    width: 88%; max-width: 360px; box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+    text-align: center;
+  }
+  .auth-card h2 { font-size: 20px; margin-bottom: 8px; color: #333; }
+  .auth-card p { font-size: 13px; color: #999; margin-bottom: 20px; }
+  .auth-input {
+    width: 100%; height: 44px; padding: 0 14px; border: 1.5px solid #ddd;
+    border-radius: 10px; font-size: 16px; outline: none; margin-bottom: 16px;
+  }
+  .auth-input:focus { border-color: #4e6ef2; }
+  .auth-btn {
+    width: 100%; height: 44px; border: none; border-radius: 10px;
+    background: #4e6ef2; color: #fff; font-size: 16px; cursor: pointer;
+  }
+  .auth-btn:active { opacity: 0.8; }
+  .auth-msg { margin-top: 12px; font-size: 13px; color: #e74c3c; min-height: 18px; }
+
+  /* ===== 漫画列表页 ===== */
+  .list-page { background: #f5f5f5; min-height: 100%; padding-bottom: 80px; }
+  .list-header {
+    position: sticky; top: 0; z-index: 10;
+    background: #fff; padding: 12px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid #eee;
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+  .list-header h1 { font-size: 20px; color: #333; }
+  .list-header-actions { display: flex; gap: 8px; }
+  .list-header-actions button {
+    padding: 6px 12px; border: 1px solid #ddd; border-radius: 6px;
+    background: #fff; font-size: 13px; cursor: pointer; color: #666;
+  }
+  .comic-list { padding: 12px 16px; }
+  .comic-item {
+    background: #fff; border-radius: 12px; padding: 14px;
+    margin-bottom: 10px; display: flex; gap: 12px; align-items: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04); cursor: pointer;
+    transition: transform 0.1s;
+  }
+  .comic-item:active { transform: scale(0.98); }
+  .comic-cover {
+    width: 56px; height: 76px; border-radius: 6px; background: #eee;
+    flex-shrink: 0; object-fit: cover;
+  }
+  .comic-cover-placeholder {
+    width: 56px; height: 76px; border-radius: 6px;
+    background: linear-gradient(135deg, #4e6ef2, #6c8aff);
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 24px;
+  }
+  .comic-info { flex: 1; min-width: 0; }
+  .comic-info .name { font-size: 15px; font-weight: 600; color: #333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .comic-info .meta { font-size: 12px; color: #999; margin-top: 4px; }
+  .comic-item .delete-btn {
+    padding: 6px 8px; border: none; background: none; color: #ccc; font-size: 18px; cursor: pointer;
+  }
+  .empty-state {
+    text-align: center; padding: 60px 20px; color: #999;
+  }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+  .import-btn-bottom {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    padding: 12px 32px; border: none; border-radius: 24px;
+    background: #4e6ef2; color: #fff; font-size: 15px; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(78,110,242,0.35);
+    z-index: 10;
+  }
+  .import-btn-bottom:active { opacity: 0.85; }
+
+  /* Toast */
+  .toast {
+    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.78); color: #fff; padding: 10px 20px;
+    border-radius: 20px; font-size: 14px; z-index: 999;
+    animation: toastIn 0.3s ease;
+  }
+  @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+  /* ===== 阅读器页 ===== */
+  .reader-page { background: #1a1a1a; min-height: 100%; color: #fff; }
+  .reader-topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+    display: flex; align-items: center; padding: 8px 12px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    background: rgba(0,0,0,0.85); gap: 10px;
+    transition: transform 0.25s;
+  }
+  .reader-topbar.hidden-bar { transform: translateY(-100%); }
+  .reader-topbar .back-btn {
+    background: none; border: none; color: #fff; font-size: 18px;
+    cursor: pointer; padding: 4px 8px;
+  }
+  .reader-topbar .title { flex:1; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .reader-topbar .page-indicator { font-size: 13px; color: #aaa; min-width: 60px; text-align: right; }
+  .reader-content { padding-top: 50px; padding-bottom: 40px; }
+  .page-separator {
+    text-align: center; padding: 16px 0 8px; color: #888;
+    font-size: 12px; letter-spacing: 2px; user-select: none;
+  }
+  .page-separator:first-child { padding-top: 8px; }
+  .page-img-wrap {
+    position: relative; overflow: auto;
+    display: flex; justify-content: center;
+    -webkit-overflow-scrolling: touch;
+  }
+  .page-img-wrap.zoomed { overflow: auto; }
+  .page-img {
+    display: block; width: 100%; height: auto; user-select: none;
+    transition: transform 0.2s ease;
+    -webkit-user-drag: none;
+  }
+  .reader-loading {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100vh; color: #888;
+  }
+  .reader-loading .spinner {
+    width: 36px; height: 36px; border: 3px solid #333;
+    border-top-color: #4e6ef2; border-radius: 50%;
+    animation: spin 0.8s linear infinite; margin-bottom: 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+  <!-- ========== 百度伪装首页 ========== -->
+  <div id="baiduPage" class="baidu-page">
+    <div class="baidu-logo">
+      <!-- 百度 logo SVG -->
+      <svg viewBox="0 0 520 180" width="130" xmlns="http://www.w3.org/2000/svg">
+        <text x="0" y="135" font-size="160" font-weight="700" fill="#4e6ef2" font-family="Arial">Baidu</text>
+        <text x="270" y="140" font-size="50" fill="#4e6ef2" font-family="Arial">百度</text>
+      </svg>
+    </div>
+    <div class="search-wrapper">
+      <input id="searchInput" class="search-box" type="text" placeholder="输入搜索内容" autocomplete="off" autocorrect="off">
+      <button id="searchBtn" class="search-btn">百度一下</button>
+    </div>
+  </div>
+
+  <!-- ========== 漫画列表页 ========== -->
+  <div id="listPage" class="list-page hidden">
+    <div class="list-header">
+      <h1>📚 我的漫画</h1>
+      <div class="list-header-actions">
+        <button id="exportBtn">📤 导出备份</button>
+        <button id="importBackupBtn">📥 导入备份</button>
+      </div>
+    </div>
+    <div id="comicList" class="comic-list"></div>
+    <button id="importBtn" class="import-btn-bottom">＋ 导入漫画</button>
+    <input id="fileInput" type="file" accept=".zip,.cbz" style="display:none">
+    <input id="backupInput" type="file" accept=".json" style="display:none">
+  </div>
+
+  <!-- ========== 密码设置/输入页 ========== -->
+  <div id="authPage" class="auth-page hidden">
+    <div class="auth-card">
+      <h2 id="authTitle">设置密码</h2>
+      <p id="authDesc">请设置一个密码来保护你的漫画</p>
+      <input id="authInput" class="auth-input" type="password" placeholder="输入密码" maxlength="32">
+      <button id="authBtn" class="auth-btn">确认</button>
+      <div id="authMsg" class="auth-msg"></div>
+    </div>
+  </div>
+
+  <!-- ========== 阅读器页 ========== -->
+  <div id="readerPage" class="reader-page hidden">
+    <div id="readerTopbar" class="reader-topbar">
+      <button class="back-btn" onclick="closeReader()">← 返回</button>
+      <span class="title" id="readerTitle"></span>
+      <span class="page-indicator" id="pageIndicator">0/0</span>
+    </div>
+    <div id="readerContent" class="reader-content"></div>
+    <div id="readerLoading" class="reader-loading">
+      <div class="spinner"></div>
+      <span>解密解压中...</span>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script>
+  // ============ 第 1 步：百度伪装 + 密码验证逻辑 ============
+
+  const BAIDU_SEARCH = 'https://www.baidu.com/s?wd=';
+  const APP_PASSWORD = '795531';  // 固定密码
+
+  // 检测 Web Crypto API 是否可用（需要 HTTPS 或 localhost）
+  if (!window.crypto || !window.crypto.subtle) {
+    document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;padding:20px;text-align:center;font-family:sans-serif;color:#e74c3c;"><div><h2>⚠️ 安全上下文不可用</h2><p style="color:#666;margin-top:8px;">加密功能需要 HTTPS 或 localhost 环境。<br>当前页面无法使用 Web Crypto API。<br><br>请通过以下方式访问：<br>① 部署到 GitHub Pages（免费 HTTPS）<br>② 电脑本机用 <code>http://localhost:3000</code> 访问</p></div></div>';
+    throw new Error('Secure context required for Web Crypto API');
+  }
+
+  // 页面切换
+  function showPage(id) {
+    document.querySelectorAll('.page, .baidu-page, .auth-page, .list-page, .reader-page').forEach(el => el.classList.add('hidden'));
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('hidden');
+  }
+
+  // ===== 百度搜索框逻辑 =====
+  const searchInput = document.getElementById('searchInput');
+  const searchBtn = document.getElementById('searchBtn');
+
+  function doSearch() {
+    const val = searchInput.value.trim();
+    if (!val) return;
+
+    if (val === APP_PASSWORD) {
+      searchInput.value = '';
+      showComicList();
+      return;
+    }
+
+    // 不是密码 → 跳转真百度
+    window.location.href = BAIDU_SEARCH + encodeURIComponent(val);
+  }
+
+  searchBtn.addEventListener('click', doSearch);
+  searchInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') doSearch();
+  });
+
+  // ===== 密码设置/输入页 =====
+  function showAuth(mode) {
+    // mode: 'set' 首次设置 | 'enter' 输入密码
+    showPage('authPage');
+    const title = document.getElementById('authTitle');
+    const desc = document.getElementById('authDesc');
+    const input = document.getElementById('authInput');
+    const btn = document.getElementById('authBtn');
+    const msg = document.getElementById('authMsg');
+
+    input.value = '';
+    msg.textContent = '';
+
+    if (mode === 'set') {
+      title.textContent = '设置密码';
+      desc.textContent = '请设置一个密码来保护你的漫画';
+    } else {
+      title.textContent = '输入密码';
+      desc.textContent = '请输入密码查看漫画';
+    }
+
+    btn.onclick = () => {
+      const val = input.value.trim();
+      if (!val) { msg.textContent = '密码不能为空'; return; }
+      if (mode === 'set') {
+        APP_PASSWORD = val;
+        showComicList();
+      } else {
+        if (val === APP_PASSWORD) {
+          showComicList();
+        } else {
+          msg.textContent = '密码错误';
+        }
+      }
+    };
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') btn.click();
+    });
+  }
+
+  // ============ 第 2 步：AES-GCM 加密模块 ============
+
+  /**
+   * PBKDF2 派生 AES-256-GCM 密钥
+   * @returns {{ key: CryptoKey, salt: Uint8Array }}
+   */
+  async function deriveKey(password, salt) {
+    const pwBytes = new TextEncoder().encode(password);
+    if (!salt) salt = crypto.getRandomValues(new Uint8Array(16));
+    const baseKey = await crypto.subtle.importKey('raw', pwBytes, 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+      baseKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+    );
+    return { key, salt };
+  }
+
+  /**
+   * 加密 → 返回 salt(16) + iv(12) + ciphertext
+   */
+  async function encryptData(data, password) {
+    const { key, salt } = await deriveKey(password);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const buf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+    const out = new Uint8Array(16 + 12 + buf.byteLength);
+    out.set(salt, 0); out.set(iv, 16); out.set(new Uint8Array(buf), 28);
+    return out.buffer;
+  }
+
+  /**
+   * 解密 → 返回原始数据
+   */
+  async function decryptData(packed, password) {
+    const data = new Uint8Array(packed);
+    const { key } = await deriveKey(password, data.slice(0, 16));
+    return await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: data.slice(16, 28) }, key, data.slice(28)
+    );
+  }
+
+  // ============ 第 3 步：IndexedDB 存储模块 ============
+
+  const DB_NAME = 'ComicVault';
+  const DB_VER = 2;
+  let db = null;
+
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VER);
+      req.onupgradeneeded = () => {
+        const idb = req.result;
+        if (!idb.objectStoreNames.contains('comics')) {
+          const store = idb.createObjectStore('comics', { keyPath: 'id', autoIncrement: true });
+          store.createIndex('addedAt', 'addedAt');
+        }
+        if (!idb.objectStoreNames.contains('settings')) {
+          idb.createObjectStore('settings', { keyPath: 'key' });
+        }
+      };
+      req.onsuccess = () => { db = req.result; resolve(db); };
+      req.onerror = () => reject(req.error);
+      req.onblocked = () => {
+        // 旧连接阻塞升级，关闭后重试
+        console.warn('DB upgrade blocked, closing old connections...');
+        if (db) { db.close(); db = null; }
+        // 无法自动恢复时，删除旧数据库重建
+        const delReq = indexedDB.deleteDatabase(DB_NAME);
+        delReq.onsuccess = () => {
+          // 递归重试
+          openDB().then(resolve).catch(reject);
+        };
+        delReq.onerror = () => reject(new Error('数据库升级被阻塞'));
+      };
+    });
+  }
+
+  /** 读取设置 */
+  async function getSetting(key) {
+    if (!db) await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('settings', 'readonly');
+      const req = tx.objectStore('settings').get(key);
+      req.onsuccess = () => resolve(req.result ? req.result.value : null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  /** 写入设置 */
+  async function setSetting(key, value) {
+    if (!db) await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('settings', 'readwrite');
+      tx.objectStore('settings').put({ key, value });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  /** 检查密码：用验证令牌判断密码是否正确 */
+  async function verifyPassword(pw) {
+    const token = await getSetting('pw_token');
+    if (!token) return null;  // 未设置过密码
+    try {
+      const decrypted = await decryptData(token, pw);
+      const text = new TextDecoder().decode(decrypted);
+      return text === 'VALID';
+    } catch {
+      return false;  // 解密失败 = 密码错误
+    }
+  }
+
+  /** 保存一条漫画记录（加密后的数据） */
+  async function saveComic(name, encryptedBuf, coverBlob) {
+    if (!db) await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('comics', 'readwrite');
+      const store = tx.objectStore('comics');
+      const rec = { name, encryptedData: encryptedBuf, cover: coverBlob, addedAt: Date.now(), progress: 0 };
+      const req = store.add(rec);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  /** 获取所有漫画列表 */
+  async function getAllComics() {
+    if (!db) await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('comics', 'readonly');
+      const req = tx.objectStore('comics').getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  /** 根据 id 获取单条漫画 */
+  async function getComic(id) {
+    if (!db) await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('comics', 'readonly');
+      const req = tx.objectStore('comics').get(id);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  /** 更新阅读进度 */
+  async function updateProgress(id, progress) {
+    if (!db) await openDB();
+    const comic = await getComic(id);
+    comic.progress = progress;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('comics', 'readwrite');
+      const req = tx.objectStore('comics').put(comic);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  /** 删除漫画 */
+  async function deleteComic(id) {
+    if (!db) await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('comics', 'readwrite');
+      const req = tx.objectStore('comics').delete(id);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  /** ArrayBuffer → Base64 */
+  function bufToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+  }
+
+  /** Base64 → ArrayBuffer */
+  function base64ToBuf(b64) {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  /** 导出所有漫画为加密备份文件 */
+  async function exportBackup() {
+    const comics = await getAllComics();
+    const backup = comics.map(c => ({
+      id: c.id, name: c.name,
+      data: bufToBase64(c.encryptedData),
+      addedAt: c.addedAt
+    }));
+    const json = JSON.stringify(backup);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'comic-backup-' + new Date().toISOString().slice(0,10) + '.json';
+    a.click(); URL.revokeObjectURL(url);
+  }
+
+  /** 从备份文件导入漫画 */
+  async function importBackup(file) {
+    const text = await file.text();
+    const list = JSON.parse(text);
+    if (!db) await openDB();
+    for (const item of list) {
+      await saveComic(item.name, base64ToBuf(item.data), null);
+    }
+    return list.length;
+  }
+
+  // ============ 第 4 步：漫画管理界面 ============
+
+  async function showComicList() {
+    showPage('listPage');
+    await renderComicList();
+  }
+
+  async function renderComicList() {
+    const container = document.getElementById('comicList');
+    const comics = await getAllComics();
+    if (comics.length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>还没有漫画<br>点击下方按钮导入</p></div>';
+      return;
+    }
+    comics.sort((a, b) => b.addedAt - a.addedAt);
+    container.innerHTML = comics.map(c => {
+      const date = new Date(c.addedAt).toLocaleDateString('zh-CN');
+      const coverHTML = c.cover
+        ? `<img class="comic-cover" src="${URL.createObjectURL(c.cover)}">`
+        : `<div class="comic-cover-placeholder">📖</div>`;
+      return `
+        <div class="comic-item" data-id="${c.id}" onclick="openComic(${c.id})">
+          ${coverHTML}
+          <div class="comic-info">
+            <div class="name">${escHtml(c.name)}</div>
+            <div class="meta">${date} · ${c.progress > 0 ? '已读至第' + c.progress + '页' : '未读'}</div>
+          </div>
+          <button class="delete-btn" onclick="event.stopPropagation();onDelete(${c.id})">🗑</button>
+        </div>`;
+    }).join('');
+  }
+
+  function escHtml(s) {
+    const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+  }
+
+  // ===== 导入漫画文件 =====
+  document.getElementById('importBtn').addEventListener('click', () => {
+    document.getElementById('fileInput').click();
+  });
+
+  document.getElementById('fileInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    toast('正在导入...');
+    try {
+      const buf = await file.arrayBuffer();
+
+      // 提取封面缩略图（加密前）
+      let coverBlob = null;
+      try {
+        const zip = await JSZip.loadAsync(buf);
+        const imgExts = ['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
+        const imgFiles = Object.keys(zip.files).filter(name => {
+          const lower = name.toLowerCase();
+          return imgExts.some(ext => lower.endsWith(ext)) && !zip.files[name].dir;
+        }).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+        if (imgFiles.length > 0) {
+          const firstBlob = await zip.files[imgFiles[0]].async('blob');
+          coverBlob = await createThumbnail(firstBlob, 120);
+        }
+      } catch { /* 封面提取失败不影响导入 */ }
+
+      // 加密原始数据
+      const encrypted = await encryptData(buf, APP_PASSWORD);
+      await saveComic(file.name, encrypted, coverBlob);
+      toast('✅ 导入成功！');
+      await renderComicList();
+    } catch (err) {
+      toast('❌ 导入失败：' + err.message);
+    }
+    e.target.value = '';
+  });
+
+  /** 用 Canvas 生成缩略图 Blob */
+  function createThumbnail(blob, maxWidth) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(blob);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const ratio = maxWidth / img.width;
+        const w = maxWidth;
+        const h = Math.round(img.height * ratio);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob(resolve, 'image/jpeg', 0.7);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('缩略图生成失败')); };
+      img.src = url;
+    });
+  }
+
+  // ============ 第 5 步：瀑布流阅读器 ============
+
+  let currentComicId = null;
+  let currentPages = [];       // Array of { blobUrl, index }
+  let currentPageObs = null;   // IntersectionObserver
+  let currentProgress = 0;
+  let progressSaveTimer = null;
+
+  async function openComic(id) {
+    currentComicId = id;
+    showPage('readerPage');
+    document.getElementById('readerLoading').classList.remove('hidden');
+    document.getElementById('readerContent').innerHTML = '';
+    document.getElementById('readerTopbar').classList.remove('hidden-bar');
+
+    try {
+      const comic = await getComic(id);
+      document.getElementById('readerTitle').textContent = comic.name;
+
+      // 解密
+      const zipBuf = await decryptData(comic.encryptedData, APP_PASSWORD);
+      // 解压
+      const zip = await JSZip.loadAsync(zipBuf);
+
+      // 筛选图片文件，按文件名排序
+      const imgExts = ['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
+      let imgFiles = Object.keys(zip.files).filter(name => {
+        const lower = name.toLowerCase();
+        return imgExts.some(ext => lower.endsWith(ext)) && !zip.files[name].dir;
+      }).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+      if (imgFiles.length === 0) {
+        document.getElementById('readerContent').innerHTML = '<div class="empty-state" style="color:#888;padding-top:40vh;"><p>😕 压缩包内未找到图片</p></div>';
+        document.getElementById('readerLoading').classList.add('hidden');
+        return;
+      }
+
+      document.getElementById('pageIndicator').textContent = '0/' + imgFiles.length;
+
+      // 按需加载：先提取全部 Blob URL，再渲染
+      currentPages = [];
+      const content = document.getElementById('readerContent');
+
+      for (let i = 0; i < imgFiles.length; i++) {
+        const fname = imgFiles[i];
+        const blob = await zip.files[fname].async('blob');
+        const url = URL.createObjectURL(blob);
+        currentPages.push({ blobUrl: url, index: i, name: fname });
+
+        const sep = document.createElement('div');
+        sep.className = 'page-separator';
+        sep.textContent = '第 ' + (i + 1) + ' 页';
+        sep.dataset.page = i + 1;
+        content.appendChild(sep);
+
+        const wrap = document.createElement('div');
+        wrap.className = 'page-img-wrap';
+        wrap.dataset.page = i + 1;
+        const img = document.createElement('img');
+        img.className = 'page-img';
+        img.src = url;
+        img.alt = '第' + (i + 1) + '页';
+        img.loading = 'lazy';
+
+        // 双击缩放
+        img.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          toggleZoom(wrap, img);
+        });
+
+        wrap.appendChild(img);
+        content.appendChild(wrap);
+      }
+
+      document.getElementById('readerLoading').classList.add('hidden');
+
+      // 恢复阅读进度
+      if (comic.progress > 0 && comic.progress <= imgFiles.length) {
+        const targetSep = document.querySelector(`.page-separator[data-page="${comic.progress}"]`);
+        if (targetSep) {
+          setTimeout(() => targetSep.scrollIntoView({ behavior: 'instant' }), 100);
+        }
+      }
+
+      // 进度追踪
+      setupProgressTracking(id, imgFiles.length);
+
+      // 点击空白区域切换顶栏
+      document.getElementById('readerContent').onclick = function(e) {
+        if (e.target === this) {
+          document.getElementById('readerTopbar').classList.toggle('hidden-bar');
+        }
+      };
+
+    } catch (err) {
+      document.getElementById('readerLoading').classList.add('hidden');
+      document.getElementById('readerContent').innerHTML =
+        '<div class="empty-state" style="color:#e74c3c;padding-top:40vh;"><p>❌ 解密失败<br><small>密码错误或数据损坏</small></p></div>';
+      console.error(err);
+    }
+  }
+
+  function toggleZoom(wrap, img) {
+    if (wrap.classList.contains('zoomed')) {
+      wrap.classList.remove('zoomed');
+      img.style.width = '100%';
+      img.style.transform = '';
+    } else {
+      wrap.classList.add('zoomed');
+      img.style.width = 'auto';
+      img.style.maxWidth = 'none';
+      img.style.transform = 'scale(1)';
+    }
+  }
+
+  function setupProgressTracking(comicId, totalPages) {
+    if (currentPageObs) currentPageObs.disconnect();
+    currentProgress = 0;
+
+    currentPageObs = new IntersectionObserver((entries) => {
+      let maxVisible = 0;
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          const p = parseInt(e.target.dataset.page);
+          if (p > maxVisible) maxVisible = p;
+        }
+      });
+      if (maxVisible > 0) {
+        currentProgress = maxVisible;
+        document.getElementById('pageIndicator').textContent = maxVisible + '/' + totalPages;
+        // 延迟保存进度
+        if (progressSaveTimer) clearTimeout(progressSaveTimer);
+        progressSaveTimer = setTimeout(() => {
+          updateProgress(comicId, maxVisible).catch(() => {});
+        }, 1000);
+      }
+    }, { threshold: 0.5 });
+
+    document.querySelectorAll('.page-separator').forEach(el => currentPageObs.observe(el));
+  }
+
+  function closeReader() {
+    if (currentPageObs) { currentPageObs.disconnect(); currentPageObs = null; }
+    if (progressSaveTimer) clearTimeout(progressSaveTimer);
+    // 最终保存进度
+    if (currentComicId && currentProgress > 0) {
+      updateProgress(currentComicId, currentProgress).catch(() => {});
+    }
+    // 清理 Blob URL
+    currentPages.forEach(p => URL.revokeObjectURL(p.blobUrl));
+    currentPages = [];
+    currentComicId = null;
+    showComicList();
+  }
+
+  // ===== 删除漫画 =====
+  async function onDelete(id) {
+    if (!confirm('确定删除这部漫画？此操作不可恢复。')) return;
+    await deleteComic(id);
+    toast('已删除');
+    await renderComicList();
+  }
+
+  // ===== 导出备份 =====
+  document.getElementById('exportBtn').addEventListener('click', async () => {
+    try {
+      await exportBackup();
+      toast('✅ 备份已导出');
+    } catch (err) {
+      toast('❌ 导出失败');
+    }
+  });
+
+  // ===== 导入备份 =====
+  document.getElementById('importBackupBtn').addEventListener('click', () => {
+    document.getElementById('backupInput').click();
+  });
+  document.getElementById('backupInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const count = await importBackup(file);
+      toast('✅ 导入 ' + count + ' 部漫画');
+      await renderComicList();
+    } catch (err) {
+      toast('❌ 导入失败：' + err.message);
+    }
+    e.target.value = '';
+  });
+
+  // ===== Toast =====
+  function toast(msg) {
+    const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2000);
+  }
+
+  // ============ 第 6 步：PWA + 收尾 ============
+
+  // PWA Manifest（伪装成百度）
+  (function() {
+    const manifest = {
+      name: '百度',
+      short_name: '百度',
+      description: '百度一下，你就知道',
+      start_url: location.href,
+      display: 'standalone',
+      background_color: '#ffffff',
+      theme_color: '#ffffff',
+      icons: [{ src: 'https://www.baidu.com/favicon.ico', sizes: '16x16', type: 'image/x-icon' }]
+    };
+    const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = URL.createObjectURL(blob);
+    document.head.appendChild(link);
+  })();
+
+  // ===== 初始化 =====
+  openDB().then(() => {
+    console.log('📱 漫画阅读器 v1.0 — 全部功能就绪');
+  });
+
+  // 自动聚焦搜索框
+  document.getElementById('searchInput').focus();
+  </script>
+</body>
+</html>

@@ -562,6 +562,9 @@
     return withDB(async db => {
       const comic = await getComic(id);
       comic.progress = progress;
+      // 防止 Blob 引用失效：用 slice(0) 创建新引用
+      comic.encryptedData = comic.encryptedData.slice(0);
+      if (comic.cover) comic.cover = comic.cover.slice(0);
       return new Promise((resolve, reject) => {
         const req = db.transaction('comics', 'readwrite').objectStore('comics').put(comic);
         req.onsuccess = () => resolve();
@@ -680,26 +683,28 @@
     // 新分段格式：count(4) + headerSize(4)
     const count = peekView.getUint32(0, true);
     const headerSize = peekView.getUint32(4, true);
-    if (count <= 0 || count > 5000 || headerSize < 12) {
-      // 尝试旧二进制格式（无 headerSize 字段）
-      return importBackupLegacy(file, peek);
+
+    // 尝试新分段格式
+    if (count > 0 && count <= 5000 && headerSize >= 8 + count * 8 && headerSize <= file.size) {
+      try {
+        const headerBuf = new Uint8Array(await file.slice(0, headerSize).arrayBuffer());
+        const hv = new DataView(headerBuf.buffer);
+        let off = 8;
+        let dataOff = headerSize;
+        for (let i = 0; i < count; i++) {
+          const nameLen = hv.getUint32(off, true); off += 4;
+          const name = new TextDecoder().decode(headerBuf.slice(off, off + nameLen)); off += nameLen;
+          const dataLen = hv.getUint32(off, true); off += 4;
+          if (dataOff + dataLen > file.size) throw new Error('bounds');
+          await saveComic(name, file.slice(dataOff, dataOff + dataLen), null);
+          dataOff += dataLen;
+        }
+        return count;
+      } catch {}
     }
 
-    // 读头部
-    const headerBuf = new Uint8Array(await file.slice(0, headerSize).arrayBuffer());
-    const hv = new DataView(headerBuf.buffer);
-    let off = 8;
-    let dataOff = headerSize;
-
-    for (let i = 0; i < count; i++) {
-      const nameLen = hv.getUint32(off, true); off += 4;
-      const name = new TextDecoder().decode(headerBuf.slice(off, off + nameLen)); off += nameLen;
-      const dataLen = hv.getUint32(off, true); off += 4;
-      const comicBlob = file.slice(dataOff, dataOff + dataLen);
-      await saveComic(name, comicBlob, null);
-      dataOff += dataLen;
-    }
-    return count;
+    // 回退到旧格式
+    return importBackupLegacy(file, peek);
   }
 
   /** 旧二进制格式（兼容） */
@@ -874,9 +879,13 @@
         try {
           const firstBlob = await zip.files[allImgs[0]].async('blob');
           const cover = await createThumbnail(firstBlob, 120);
-          const comic2 = { ...comic, cover };
+          // slice(0) 创建新的 Blob 引用，避免原始引用被消耗后写回损坏数据
           await withDB(db => new Promise((resolve, reject) => {
-            const req = db.transaction('comics', 'readwrite').objectStore('comics').put(comic2);
+            const req = db.transaction('comics', 'readwrite').objectStore('comics').put({
+              id: comic.id, name: comic.name,
+              encryptedData: comic.encryptedData.slice(0),
+              cover, addedAt: comic.addedAt, progress: comic.progress
+            });
             req.onsuccess = resolve; req.onerror = reject;
           }));
         } catch {}
@@ -1151,10 +1160,10 @@
 
   // ===== 初始化 =====
   openDB().then(() => {
-    console.log('📱 漫画阅读器 v5.4 — 备份兼容');
+    console.log('📱 漫画阅读器 v5.6 — Blob损坏修复');
   });
 
-  document.getElementById('searchInput').placeholder = '百度一下 · v5.4';
+  document.getElementById('searchInput').placeholder = '百度一下 · v5.6';
   document.getElementById('searchInput').focus();
   </script>
 </body>

@@ -613,31 +613,44 @@
     return new Blob([bytes], { type });
   }
 
-  /** 导出所有漫画为加密备份文件（二进制格式，无 base64 膨胀） */
+  /** 导出所有漫画为加密备份文件（分段格式：头部+数据区） */
   async function exportBackup() {
     const comics = await getAllComics();
     if (comics.length === 0) { toast('没有漫画可导出'); return; }
     toast('正在打包...');
-    const parts = [];
-    // 文件头：漫画数量
-    const countBuf = new Uint8Array(4);
-    new DataView(countBuf.buffer).setUint32(0, comics.length, true);
-    parts.push(countBuf);
 
+    // 先算头部：count(4) + headerSize(4) + 每本(nameLen+name+dataLen)
+    let headerSize = 8;
+    const entries = [];
     for (const c of comics) {
-      // 文件名
       const nameBytes = new TextEncoder().encode(c.name);
-      const nameLen = new Uint8Array(4);
-      new DataView(nameLen.buffer).setUint32(0, nameBytes.length, true);
-      parts.push(nameLen, nameBytes);
-      // 加密数据
-      const dataBuf = new Uint8Array(await c.encryptedData.arrayBuffer());
-      const dataLen = new Uint8Array(4);
-      new DataView(dataLen.buffer).setUint32(0, dataBuf.length, true);
-      parts.push(dataLen, dataBuf);
+      entries.push({ nameBytes, nameLen: nameBytes.length, dataLen: 0 });
+      headerSize += 4 + nameBytes.length + 4;
     }
 
-    const blob = new Blob(parts, { type: 'application/octet-stream' });
+    // 收集数据，填充实际长度
+    const dataParts = [];
+    let dataOffset = 0;
+    for (let i = 0; i < comics.length; i++) {
+      const dataBuf = new Uint8Array(await comics[i].encryptedData.arrayBuffer());
+      entries[i].dataLen = dataBuf.length;
+      dataParts.push(dataBuf);
+      dataOffset += dataBuf.length;
+    }
+
+    // 构建头部
+    const headerBuf = new Uint8Array(headerSize);
+    const hv = new DataView(headerBuf.buffer);
+    hv.setUint32(0, comics.length, true);
+    hv.setUint32(4, headerSize, true);
+    let off = 8;
+    for (const e of entries) {
+      hv.setUint32(off, e.nameLen, true); off += 4;
+      headerBuf.set(e.nameBytes, off); off += e.nameLen;
+      hv.setUint32(off, e.dataLen, true); off += 4;
+    }
+
+    const blob = new Blob([headerBuf, ...dataParts], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = 'comic-backup-' + new Date().toISOString().slice(0,10) + '.cbackup';
@@ -646,31 +659,56 @@
     toast('✅ 备份已导出');
   }
 
-  /** 从备份文件导入漫画（兼容旧 JSON 和新二进制格式） */
+  /** 从备份文件导入漫画（兼容旧格式 + 新分段格式） */
   async function importBackup(file) {
+    // 读取前 8 字节判断格式
+    const peek = new Uint8Array(await file.slice(0, 8).arrayBuffer());
+    const peekView = new DataView(peek.buffer);
+
+    // 尝试 JSON 格式
+    if (peek[0] === 0x5B) {
+      const text = await file.text();
+      const list = JSON.parse(text);
+      for (const item of list) {
+        const coverBlob = item.cover ? base64ToBlob(item.cover, item.coverType || 'image/jpeg') : null;
+        const dataBlob = new Blob([base64ToBuf(item.data)]);
+        await saveComic(item.name, dataBlob, coverBlob);
+      }
+      return list.length;
+    }
+
+    // 新分段格式：count(4) + headerSize(4)
+    const count = peekView.getUint32(0, true);
+    const headerSize = peekView.getUint32(4, true);
+    if (count <= 0 || count > 5000 || headerSize < 12) {
+      // 尝试旧二进制格式（无 headerSize 字段）
+      return importBackupLegacy(file, peek);
+    }
+
+    // 读头部
+    const headerBuf = new Uint8Array(await file.slice(0, headerSize).arrayBuffer());
+    const hv = new DataView(headerBuf.buffer);
+    let off = 8;
+    let dataOff = headerSize;
+
+    for (let i = 0; i < count; i++) {
+      const nameLen = hv.getUint32(off, true); off += 4;
+      const name = new TextDecoder().decode(headerBuf.slice(off, off + nameLen)); off += nameLen;
+      const dataLen = hv.getUint32(off, true); off += 4;
+      const comicBlob = file.slice(dataOff, dataOff + dataLen);
+      await saveComic(name, comicBlob, null);
+      dataOff += dataLen;
+    }
+    return count;
+  }
+
+  /** 旧二进制格式（兼容） */
+  async function importBackupLegacy(file, peek) {
     const buf = await file.arrayBuffer();
     const data = new Uint8Array(buf);
-
-    // 先尝试 JSON 格式
-    try {
-      const text = new TextDecoder().decode(data);
-      if (text.trim()[0] === '[') {
-        const list = JSON.parse(text);
-        if (Array.isArray(list)) {
-          for (const item of list) {
-            const coverBlob = item.cover ? base64ToBlob(item.cover, item.coverType || 'image/jpeg') : null;
-            const dataBlob = new Blob([base64ToBuf(item.data)]);
-            await saveComic(item.name, dataBlob, coverBlob);
-          }
-          return list.length;
-        }
-      }
-    } catch {}
-
-    // 二进制格式
     const view = new DataView(buf);
     const count = view.getUint32(0, true);
-    if (count < 0 || count > 5000) throw new Error('不支持的文件格式');
+    if (count <= 0 || count > 5000) throw new Error('不支持的文件格式');
     let offset = 4;
     for (let i = 0; i < count; i++) {
       const nameLen = view.getUint32(offset, true); offset += 4;

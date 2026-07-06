@@ -367,69 +367,50 @@
   const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB 分块
 
   /**
-   * 分块加密 → [salt:16][chunkCount:4][iv:12][len:4][data][iv:12][len:4][data]...
-   * 每块独立 IV + GCM 认证，峰值内存约 chunkSize
+   * 分块加密 File → 返回 Blob（不占满内存）
+   * 格式: [salt:16][chunkCount:4][iv:12][len:4][data]...
    */
-  async function encryptData(data, password) {
+  async function encryptFile(file, password) {
     const { key, salt } = await deriveKey(password);
-    const bytes = new Uint8Array(data);
-    const chunkCount = Math.ceil(bytes.length / CHUNK_SIZE);
-
-    // 预估总大小：salt + chunkCount + 每块(iv + len + ciphertext+tag)
-    const tagSize = 16; // GCM 认证标签
-    let totalSize = 16 + 4; // salt + chunkCount
-    const chunkSizes = [];
-    for (let i = 0; i < chunkCount; i++) {
-      const start = i * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, bytes.length);
-      chunkSizes.push(end - start);
-      totalSize += 12 + 4 + (end - start) + tagSize;
-    }
-
-    const out = new Uint8Array(totalSize);
-    out.set(salt, 0);
-    new DataView(out.buffer).setUint32(16, chunkCount, true);
-    let offset = 20;
+    const chunkCount = Math.ceil(file.size / CHUNK_SIZE);
+    const parts = [salt];
+    const countBuf = new Uint8Array(4);
+    new DataView(countBuf.buffer).setUint32(0, chunkCount, true);
+    parts.push(countBuf);
 
     for (let i = 0; i < chunkCount; i++) {
       const start = i * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, bytes.length);
-      const chunk = bytes.slice(start, end);
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const buf = await file.slice(start, end).arrayBuffer();
       const iv = crypto.getRandomValues(new Uint8Array(12));
-      const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, chunk);
-      out.set(iv, offset); offset += 12;
-      new DataView(out.buffer).setUint32(offset, encrypted.byteLength, true); offset += 4;
-      out.set(new Uint8Array(encrypted), offset); offset += encrypted.byteLength;
+      const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, buf);
+      const lenBuf = new Uint8Array(4);
+      new DataView(lenBuf.buffer).setUint32(0, encrypted.byteLength, true);
+      parts.push(iv, lenBuf, new Uint8Array(encrypted));
     }
-
-    return out.buffer;
+    return new Blob(parts);
   }
 
   /**
-   * 分块解密
+   * 分块解密 Blob → 返回 Blob（不占满内存）
    */
-  async function decryptData(packed, password) {
-    const data = new Uint8Array(packed);
-    const salt = data.slice(0, 16);
+  async function decryptBlob(blob, password) {
+    // 读 salt
+    const salt = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
     const { key } = await deriveKey(password, salt);
-    const chunkCount = new DataView(data.buffer).getUint32(16, true);
+    // 读 chunkCount
+    const chunkCount = new DataView(await blob.slice(16, 20).arrayBuffer()).getUint32(0, true);
 
+    const parts = [];
     let offset = 20;
-    const chunks = [];
     for (let i = 0; i < chunkCount; i++) {
-      const iv = data.slice(offset, offset + 12); offset += 12;
-      const len = new DataView(data.buffer).getUint32(offset, true); offset += 4;
-      const ciphertext = data.slice(offset, offset + len); offset += len;
+      const iv = new Uint8Array(await blob.slice(offset, offset + 12).arrayBuffer()); offset += 12;
+      const len = new DataView(await blob.slice(offset, offset + 4).arrayBuffer()).getUint32(0, true); offset += 4;
+      const ciphertext = await blob.slice(offset, offset + len).arrayBuffer(); offset += len;
       const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
-      chunks.push(new Uint8Array(plain));
+      parts.push(new Uint8Array(plain));
     }
-
-    // 拼接所有块
-    const totalLen = chunks.reduce((s, c) => s + c.length, 0);
-    const result = new Uint8Array(totalLen);
-    let pos = 0;
-    for (const c of chunks) { result.set(c, pos); pos += c.length; }
-    return result.buffer;
+    return new Blob(parts);
   }
 
   // ============ 第 3 步：IndexedDB 存储模块 ============
@@ -604,7 +585,7 @@
     for (const c of comics) {
       const item = {
         id: c.id, name: c.name,
-        data: bufToBase64(c.encryptedData),
+        data: await blobToBase64(c.encryptedData),
         addedAt: c.addedAt
       };
       if (c.cover) {
@@ -625,10 +606,10 @@
   async function importBackup(file) {
     const text = await file.text();
     const list = JSON.parse(text);
-    if (!db) await openDB();
     for (const item of list) {
       const coverBlob = item.cover ? base64ToBlob(item.cover, item.coverType || 'image/jpeg') : null;
-      await saveComic(item.name, base64ToBuf(item.data), coverBlob);
+      const dataBlob = new Blob([base64ToBuf(item.data)]);
+      await saveComic(item.name, dataBlob, coverBlob);
     }
     return list.length;
   }
@@ -679,12 +660,10 @@
     if (!file) return;
     toast('正在导入...');
     try {
-      const buf = await file.arrayBuffer();
-
       // 提取封面缩略图（加密前）
       let coverBlob = null;
       try {
-        const zip = await loadZipSafe(buf);
+        const zip = await loadZipSafe(file);
         const imgExts = ['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
         const imgFiles = Object.keys(zip.files).filter(name => {
           const lower = name.toLowerCase();
@@ -696,8 +675,8 @@
         }
       } catch { /* 封面提取失败不影响导入 */ }
 
-      // 加密原始数据
-      const encrypted = await encryptData(buf, APP_PASSWORD);
+      // 分块加密（直接读 File，不占内存）
+      const encrypted = await encryptFile(file, APP_PASSWORD);
       await saveComic(file.name, encrypted, coverBlob);
       toast('✅ 导入成功！');
       await renderComicList();
@@ -763,7 +742,7 @@
       const comic = await getComic(id);
       document.getElementById('readerTitle').textContent = comic.name;
 
-      const zipBuf = await decryptData(comic.encryptedData, APP_PASSWORD);
+      const zipBuf = await decryptBlob(comic.encryptedData, APP_PASSWORD);
       const zip = await loadZipSafe(zipBuf);
 
       const imgExts = ['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
@@ -981,10 +960,10 @@
 
   // ===== 初始化 =====
   openDB().then(() => {
-    console.log('📱 漫画阅读器 v3 — 分块加密');
+    console.log('📱 漫画阅读器 v4 — Blob流式加密');
   });
 
-  document.getElementById('searchInput').placeholder = '百度一下 · v3';
+  document.getElementById('searchInput').placeholder = '百度一下 · v4';
   document.getElementById('searchInput').focus();
   </script>
 </body>

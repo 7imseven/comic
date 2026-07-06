@@ -936,10 +936,11 @@
 
   // ===== 初始化 =====
   openDB().then(() => {
-    console.log('📱 漫画阅读器 v1.0 — 全部功能就绪');
+    console.log('📱 漫画阅读器 v2 — 全部功能就绪');
   });
 
-  // 自动聚焦搜索框
+  // 版本号（显示在百度页脚，方便确认是否最新）
+  document.getElementById('searchInput').placeholder = '百度一下 · v2';
   document.getElementById('searchInput').focus();
   </script>
 </body>

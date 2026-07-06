@@ -482,6 +482,15 @@
     }));
   }
 
+  /** 读取单个数据块 */
+  async function getChunk(key) {
+    return withDB(db => new Promise((resolve, reject) => {
+      const req = db.transaction('chunks', 'readonly').objectStore('chunks').get(key);
+      req.onsuccess = () => resolve(req.result ? req.result.data : null);
+      req.onerror = () => reject(req.error);
+    }));
+  }
+
   /** 读取设置 */
   async function getSetting(key) {
     if (!db) await openDB();
@@ -639,8 +648,11 @@
       const nameBytes = new TextEncoder().encode(c.name);
       hv.setUint32(off, nameBytes.length, true); off += 4;
       headerBuf.set(nameBytes, off); off += nameBytes.length;
-      hv.setUint32(off, c.encryptedData.size, true); off += 4;
-      dataParts.push(c.encryptedData);
+      hv.setUint32(off, c.dataSize || 0, true); off += 4;
+      // 直接从 chunks 读取，不组装成单 Blob
+      for (let i = 0; i < (c.chunkCount || 0); i++) {
+        dataParts.push(await getChunk(c.id + '_' + i));
+      }
     }
 
     const blob = new Blob([headerBuf, ...dataParts], { type: 'application/octet-stream' });
@@ -848,8 +860,8 @@
       document.getElementById('readerTitle').textContent = comic.name;
 
       // 组装分块数据，直接传给 JSZip
-      const rawBlob = await getComicData(id, comic.chunkCount || 1);
-      const zip = await loadZipSafe(rawBlob);
+      let rawBlob = await getComicData(id, comic.chunkCount || 1);
+      let zip = await loadZipSafe(rawBlob);
 
       const imgExts = ['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
       const isImg = name => imgExts.some(ext => name.toLowerCase().endsWith(ext)) && !zip.files[name].dir;
@@ -954,6 +966,9 @@
 
       document.getElementById('readerLoading').classList.add('hidden');
 
+      // 释放 ZIP 引用，减小内存压力
+      rawBlob = null; zip = null;
+
       if (comic.progress > 0 && comic.progress <= totalPages) {
         const targetSep = document.querySelector(`.page-separator[data-page="${comic.progress}"]`);
         if (targetSep) setTimeout(() => targetSep.scrollIntoView({ behavior: 'instant' }), 100);
@@ -1019,13 +1034,15 @@
     if (currentPageObs) { currentPageObs.disconnect(); currentPageObs = null; }
     if (chapterTrackerObs) { chapterTrackerObs.disconnect(); chapterTrackerObs = null; }
     if (progressSaveTimer) clearTimeout(progressSaveTimer);
-    // 最终保存进度
+    cleanupScrollbar();
     if (currentComicId && currentProgress > 0) {
       updateProgress(currentComicId, currentProgress).catch(() => {});
     }
-    // 清理 Blob URL
+    // 清理 Blob URL 并清空 DOM 释放内存
     currentPages.forEach(p => URL.revokeObjectURL(p.blobUrl));
     currentPages = [];
+    document.getElementById('readerContent').innerHTML = '';
+    document.getElementById('scrollbar').classList.remove('visible');
     currentComicId = null;
     showComicList();
   }
@@ -1095,7 +1112,20 @@
 
   // ===== 快速滚动条 =====
   let scrollbarTimer = null;
+  let scrollbarListeners = null;
+
+  function cleanupScrollbar() {
+    if (scrollbarListeners) {
+      window.removeEventListener('scroll', scrollbarListeners.scroll);
+      document.removeEventListener('touchmove', scrollbarListeners.touchmove);
+      document.removeEventListener('touchend', scrollbarListeners.touchend);
+      scrollbarListeners = null;
+    }
+    clearTimeout(scrollbarTimer);
+  }
+
   function initScrollbar() {
+    cleanupScrollbar(); // 先清旧监听
     const track = document.getElementById('scrollbar');
     const thumb = document.getElementById('scrollbarThumb');
     let dragging = false;
@@ -1118,22 +1148,24 @@
       }
     }
 
-    window.addEventListener('scroll', () => { updateThumb(); show(); hideSoon(); }, { passive: true });
-
-    // 触摸拖动
-    thumb.addEventListener('touchstart', e => {
-      dragging = true; show();
-    }, { passive: true });
-    document.addEventListener('touchmove', e => {
+    const onScroll = () => { updateThumb(); show(); hideSoon(); };
+    const onTouchMove = e => {
       if (!dragging) return;
+      e.preventDefault();
       const touch = e.touches[0];
       const trackRect = track.getBoundingClientRect();
       const thumbH = thumb.clientHeight;
       const ratio = (touch.clientY - trackRect.top - thumbH / 2) / (trackRect.height - thumbH);
-      const docH = document.documentElement.scrollHeight - window.innerHeight;
-      window.scrollTo(0, Math.max(0, Math.min(docH, ratio * docH)));
-    }, { passive: false });
-    document.addEventListener('touchend', () => { dragging = false; hideSoon(); });
+      window.scrollTo(0, Math.max(0, Math.min(document.documentElement.scrollHeight - window.innerHeight, ratio * (document.documentElement.scrollHeight - window.innerHeight))));
+    };
+    const onTouchEnd = () => { dragging = false; hideSoon(); };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    thumb.addEventListener('touchstart', () => { dragging = true; show(); }, { passive: true });
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    document.addEventListener('touchend', onTouchEnd);
+
+    scrollbarListeners = { scroll: onScroll, touchmove: onTouchMove, touchend: onTouchEnd };
 
     updateThumb();
     setTimeout(() => hideSoon(), 2000);

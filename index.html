@@ -183,6 +183,20 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* 快速滚动条 */
+  .scrollbar-track {
+    position: fixed; right: 2px; top: 10vh; bottom: 5vh;
+    width: 6px; z-index: 25; opacity: 0; transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .scrollbar-track.visible { opacity: 1; pointer-events: auto; }
+  .scrollbar-thumb {
+    position: absolute; left: 0; width: 100%;
+    background: rgba(255,255,255,0.35); border-radius: 3px;
+    min-height: 40px; cursor: pointer; transition: background 0.15s;
+  }
+  .scrollbar-thumb:active { background: rgba(255,255,255,0.6); }
+
   /* 话/章节分隔 */
   .chapter-separator {
     text-align: center; padding: 24px 0 12px; color: #4e6ef2;
@@ -292,9 +306,10 @@
       <span class="page-indicator" id="pageIndicator">0/0</span>
     </div>
     <div id="readerContent" class="reader-content"></div>
+    <div id="scrollbar" class="scrollbar-track"><div id="scrollbarThumb" class="scrollbar-thumb"></div></div>
     <div id="readerLoading" class="reader-loading">
       <div class="spinner"></div>
-      <span>解密解压中...</span>
+      <span>加载中...</span>
     </div>
   </div>
 
@@ -303,13 +318,7 @@
   // ============ 第 1 步：百度伪装 + 密码验证逻辑 ============
 
   const BAIDU_SEARCH = 'https://www.baidu.com/s?wd=';
-  const APP_PASSWORD = '795531';  // 固定密码
-
-  // 检测 Web Crypto API 是否可用（需要 HTTPS 或 localhost）
-  if (!window.crypto || !window.crypto.subtle) {
-    document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;padding:20px;text-align:center;font-family:sans-serif;color:#e74c3c;"><div><h2>⚠️ 安全上下文不可用</h2><p style="color:#666;margin-top:8px;">加密功能需要 HTTPS 或 localhost 环境。<br>当前页面无法使用 Web Crypto API。<br><br>请通过以下方式访问：<br>① 部署到 GitHub Pages（免费 HTTPS）<br>② 电脑本机用 <code>http://localhost:3000</code> 访问</p></div></div>';
-    throw new Error('Secure context required for Web Crypto API');
-  }
+  const APP_PASSWORD = '795531';  // 固定密码（仅入口验证，无加密）
 
   // 页面切换
   function showPage(id) {
@@ -382,73 +391,7 @@
     });
   }
 
-  // ============ 第 2 步：AES-GCM 加密模块 ============
-
-  /**
-   * PBKDF2 派生 AES-256-GCM 密钥
-   * @returns {{ key: CryptoKey, salt: Uint8Array }}
-   */
-  async function deriveKey(password, salt) {
-    const pwBytes = new TextEncoder().encode(password);
-    if (!salt) salt = crypto.getRandomValues(new Uint8Array(16));
-    const baseKey = await crypto.subtle.importKey('raw', pwBytes, 'PBKDF2', false, ['deriveKey']);
-    const key = await crypto.subtle.deriveKey(
-      { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
-      baseKey, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
-    );
-    return { key, salt };
-  }
-
-  const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB 分块
-
-  /**
-   * 分块加密 File → 返回 Blob（不占满内存）
-   * 格式: [salt:16][chunkCount:4][iv:12][len:4][data]...
-   */
-  async function encryptFile(file, password) {
-    const { key, salt } = await deriveKey(password);
-    const chunkCount = Math.ceil(file.size / CHUNK_SIZE);
-    const parts = [salt];
-    const countBuf = new Uint8Array(4);
-    new DataView(countBuf.buffer).setUint32(0, chunkCount, true);
-    parts.push(countBuf);
-
-    for (let i = 0; i < chunkCount; i++) {
-      const start = i * CHUNK_SIZE;
-      const end = Math.min(start + CHUNK_SIZE, file.size);
-      const buf = await file.slice(start, end).arrayBuffer();
-      const iv = crypto.getRandomValues(new Uint8Array(12));
-      const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, buf);
-      const lenBuf = new Uint8Array(4);
-      new DataView(lenBuf.buffer).setUint32(0, encrypted.byteLength, true);
-      parts.push(iv, lenBuf, new Uint8Array(encrypted));
-    }
-    return new Blob(parts);
-  }
-
-  /**
-   * 分块解密 Blob → 返回 Blob（不占满内存）
-   */
-  async function decryptBlob(blob, password) {
-    // 读 salt
-    const salt = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
-    const { key } = await deriveKey(password, salt);
-    // 读 chunkCount
-    const chunkCount = new DataView(await blob.slice(16, 20).arrayBuffer()).getUint32(0, true);
-
-    const parts = [];
-    let offset = 20;
-    for (let i = 0; i < chunkCount; i++) {
-      const iv = new Uint8Array(await blob.slice(offset, offset + 12).arrayBuffer()); offset += 12;
-      const len = new DataView(await blob.slice(offset, offset + 4).arrayBuffer()).getUint32(0, true); offset += 4;
-      const ciphertext = await blob.slice(offset, offset + len).arrayBuffer(); offset += len;
-      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
-      parts.push(new Uint8Array(plain));
-    }
-    return new Blob(parts);
-  }
-
-  // ============ 第 3 步：IndexedDB 存储模块 ============
+  // ============ 第 2 步：存储模块 ============
 
   const DB_NAME = 'ComicVault';
   const DB_VER = 3;
@@ -835,9 +778,8 @@
         } catch { /* 封面提取失败不影响导入 */ }
       }
 
-      // 分块加密（直接读 File，不占内存）
-      const encrypted = await encryptFile(file, APP_PASSWORD);
-      await saveComic(file.name, encrypted, coverBlob);
+      // 直接分块存储（无加密）
+      await saveComic(file.name, file, coverBlob);
       toast('✅ 导入成功！');
       await renderComicList();
     } catch (err) {
@@ -905,10 +847,9 @@
       const comic = await getComic(id);
       document.getElementById('readerTitle').textContent = comic.name;
 
-      // 从分块存储组装加密数据
-      const encBlob = await getComicData(id, comic.chunkCount || 1);
-      const zipBuf = await decryptBlob(encBlob, APP_PASSWORD);
-      const zip = await loadZipSafe(zipBuf);
+      // 组装分块数据，直接传给 JSZip
+      const rawBlob = await getComicData(id, comic.chunkCount || 1);
+      const zip = await loadZipSafe(rawBlob);
 
       const imgExts = ['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
       const isImg = name => imgExts.some(ext => name.toLowerCase().endsWith(ext)) && !zip.files[name].dir;
@@ -923,19 +864,21 @@
         return;
       }
 
-      // 无封面时用第一张图生成缩略图
+      // 无封面时用第一张图生成缩略图（仅更新元数据）
       if (!comic.cover) {
         try {
           const firstBlob = await zip.files[allImgs[0]].async('blob');
           const cover = await createThumbnail(firstBlob, 120);
-          // slice(0) 创建新的 Blob 引用，避免原始引用被消耗后写回损坏数据
           await withDB(db => new Promise((resolve, reject) => {
-            const req = db.transaction('comics', 'readwrite').objectStore('comics').put({
-              id: comic.id, name: comic.name,
-              encryptedData: comic.encryptedData.slice(0),
-              cover, addedAt: comic.addedAt, progress: comic.progress
-            });
-            req.onsuccess = resolve; req.onerror = reject;
+            const tx = db.transaction('comics', 'readwrite');
+            const req = tx.objectStore('comics').get(id);
+            req.onsuccess = () => {
+              const rec = req.result;
+              rec.cover = cover;
+              tx.objectStore('comics').put(rec);
+            };
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
           }));
         } catch {}
       }
@@ -1023,11 +966,12 @@
       };
 
       currentChapterTracker();
+      initScrollbar();
 
     } catch (err) {
       document.getElementById('readerLoading').classList.add('hidden');
       document.getElementById('readerContent').innerHTML =
-        '<div class="empty-state" style="color:#e74c3c;padding-top:40vh;"><p>❌ 解密失败<br><small>密码错误或数据损坏</small></p></div>';
+        '<div class="empty-state" style="color:#e74c3c;padding-top:40vh;"><p>❌ 加载失败<br><small>数据损坏或不完整</small></p></div>';
       console.error(err);
     }
   }
@@ -1149,6 +1093,52 @@
     if (el) el.scrollIntoView({ behavior: 'smooth' });
   }
 
+  // ===== 快速滚动条 =====
+  let scrollbarTimer = null;
+  function initScrollbar() {
+    const track = document.getElementById('scrollbar');
+    const thumb = document.getElementById('scrollbarThumb');
+    let dragging = false;
+
+    function updateThumb() {
+      const docH = document.documentElement.scrollHeight - window.innerHeight;
+      if (docH <= 0) { track.classList.remove('visible'); return; }
+      const ratio = window.scrollY / docH;
+      const trackH = track.clientHeight;
+      const thumbH = Math.max(40, trackH * (window.innerHeight / document.documentElement.scrollHeight));
+      thumb.style.height = thumbH + 'px';
+      thumb.style.top = (trackH - thumbH) * ratio + 'px';
+    }
+
+    function show() { track.classList.add('visible'); }
+    function hideSoon() {
+      if (!dragging) {
+        clearTimeout(scrollbarTimer);
+        scrollbarTimer = setTimeout(() => track.classList.remove('visible'), 1500);
+      }
+    }
+
+    window.addEventListener('scroll', () => { updateThumb(); show(); hideSoon(); }, { passive: true });
+
+    // 触摸拖动
+    thumb.addEventListener('touchstart', e => {
+      dragging = true; show();
+    }, { passive: true });
+    document.addEventListener('touchmove', e => {
+      if (!dragging) return;
+      const touch = e.touches[0];
+      const trackRect = track.getBoundingClientRect();
+      const thumbH = thumb.clientHeight;
+      const ratio = (touch.clientY - trackRect.top - thumbH / 2) / (trackRect.height - thumbH);
+      const docH = document.documentElement.scrollHeight - window.innerHeight;
+      window.scrollTo(0, Math.max(0, Math.min(docH, ratio * docH)));
+    }, { passive: false });
+    document.addEventListener('touchend', () => { dragging = false; hideSoon(); });
+
+    updateThumb();
+    setTimeout(() => hideSoon(), 2000);
+  }
+
   // ===== 删除漫画 =====
   async function onDelete(id) {
     if (!confirm('确定删除这部漫画？此操作不可恢复。')) return;
@@ -1209,10 +1199,10 @@
 
   // ===== 初始化 =====
   openDB().then(() => {
-    console.log('📱 漫画阅读器 v5.6 — Blob损坏修复');
+    console.log('📱 漫画阅读器 v7.1 — 快滑条');
   });
 
-  document.getElementById('searchInput').placeholder = '百度一下 · v5.6';
+  document.getElementById('searchInput').placeholder = '百度一下 · v7.1';
   document.getElementById('searchInput').focus();
   </script>
 </body>

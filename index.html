@@ -968,6 +968,16 @@
   function showChapterMenu() {
     if (currentChapters.length <= 1) return;
     document.querySelectorAll('.chapter-overlay').forEach(e => e.remove());
+
+    // 根据滚动位置计算当前章节：找最后一个顶部已滚过屏幕上方的分隔线
+    let detectedChap = 0;
+    const viewTop = window.scrollY + 70; // 顶栏高度补偿
+    document.querySelectorAll('.chapter-separator').forEach(el => {
+      const elTop = el.getBoundingClientRect().top + window.scrollY;
+      if (elTop <= viewTop) detectedChap = parseInt(el.id.replace('chap-', ''));
+    });
+    currentChapIdx = detectedChap;
+
     const overlay = document.createElement('div');
     overlay.className = 'chapter-overlay';
     overlay.onclick = function(e) { if (e.target === this) this.remove(); };
@@ -1060,10 +1070,10 @@
 
   // ===== 初始化 =====
   openDB().then(() => {
-    console.log('📱 漫画阅读器 v5.1 — 章节追踪修复');
+    console.log('📱 漫画阅读器 v5.2 — 目录实时定位');
   });
 
-  document.getElementById('searchInput').placeholder = '百度一下 · v5';
+  document.getElementById('searchInput').placeholder = '百度一下 · v5.2';
   document.getElementById('searchInput').focus();
   </script>
 </body>

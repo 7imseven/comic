@@ -946,18 +946,20 @@
   function currentChapterTracker() {
     if (currentChapters.length <= 1) return;
     if (chapterTrackerObs) chapterTrackerObs.disconnect();
-    currentChapIdx = 0;
     chapterTrackerObs = new IntersectionObserver(entries => {
-      let maxIdx = 0;
+      let bestIdx = -1;
       entries.forEach(e => {
         if (e.isIntersecting) {
           const idx = parseInt(e.target.id.replace('chap-', ''));
-          if (idx > maxIdx) maxIdx = idx;
+          if (idx > bestIdx) bestIdx = idx;
         }
       });
-      currentChapIdx = maxIdx;
-      if (currentChapters[currentChapIdx] && currentChapters[currentChapIdx].name) {
-        document.getElementById('readerTitle').textContent = currentChapters[currentChapIdx].name;
+      // 只有确实有分隔线在视野内才更新，否则保持当前话数
+      if (bestIdx >= 0) {
+        currentChapIdx = bestIdx;
+        if (currentChapters[currentChapIdx] && currentChapters[currentChapIdx].name) {
+          document.getElementById('readerTitle').textContent = currentChapters[currentChapIdx].name;
+        }
       }
     }, { threshold: 0.3 });
     document.querySelectorAll('.chapter-separator').forEach(el => chapterTrackerObs.observe(el));
@@ -1058,7 +1060,7 @@
 
   // ===== 初始化 =====
   openDB().then(() => {
-    console.log('📱 漫画阅读器 v5 — 章节目录');
+    console.log('📱 漫画阅读器 v5.1 — 章节追踪修复');
   });
 
   document.getElementById('searchInput').placeholder = '百度一下 · v5';

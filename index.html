@@ -394,6 +394,8 @@
   let db = null;
 
   function openDB() {
+    // 已有连接直接复用
+    if (db) return Promise.resolve(db);
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VER);
       req.onupgradeneeded = () => {
@@ -408,18 +410,6 @@
       };
       req.onsuccess = () => { db = req.result; resolve(db); };
       req.onerror = () => reject(req.error);
-      req.onblocked = () => {
-        // 旧连接阻塞升级，关闭后重试
-        console.warn('DB upgrade blocked, closing old connections...');
-        if (db) { db.close(); db = null; }
-        // 无法自动恢复时，删除旧数据库重建
-        const delReq = indexedDB.deleteDatabase(DB_NAME);
-        delReq.onsuccess = () => {
-          // 递归重试
-          openDB().then(resolve).catch(reject);
-        };
-        delReq.onerror = () => reject(new Error('数据库升级被阻塞'));
-      };
     });
   }
 
@@ -638,7 +628,7 @@
       // 提取封面缩略图（加密前）
       let coverBlob = null;
       try {
-        const zip = await JSZip.loadAsync(buf);
+        const zip = await loadZipSafe(buf);
         const imgExts = ['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
         const imgFiles = Object.keys(zip.files).filter(name => {
           const lower = name.toLowerCase();
@@ -684,6 +674,22 @@
 
   // ============ 第 5 步：瀑布流阅读器 ============
 
+  /** 加载 ZIP（兼容 GBK/Shift-JIS 文件名编码） */
+  async function loadZipSafe(buf) {
+    // 优先尝试 UTF-8，失败后尝试 GBK
+    try {
+      return await JSZip.loadAsync(buf);
+    } catch (e) {
+      // 如果 UTF-8 失败，尝试用 GBK 解码文件名
+      return await JSZip.loadAsync(buf, {
+        decodeFileName: bytes => {
+          try { return new TextDecoder('gbk').decode(bytes); }
+          catch { return new TextDecoder('utf-8').decode(bytes); }
+        }
+      });
+    }
+  }
+
   let currentComicId = null;
   let currentPages = [];       // Array of { blobUrl, index }
   let currentPageObs = null;   // IntersectionObserver
@@ -702,7 +708,7 @@
       document.getElementById('readerTitle').textContent = comic.name;
 
       const zipBuf = await decryptData(comic.encryptedData, APP_PASSWORD);
-      const zip = await JSZip.loadAsync(zipBuf);
+      const zip = await loadZipSafe(zipBuf);
 
       const imgExts = ['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
       const isImg = name => imgExts.some(ext => name.toLowerCase().endsWith(ext)) && !zip.files[name].dir;

@@ -364,27 +364,72 @@
     return { key, salt };
   }
 
+  const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB 分块
+
   /**
-   * 加密 → 返回 salt(16) + iv(12) + ciphertext
+   * 分块加密 → [salt:16][chunkCount:4][iv:12][len:4][data][iv:12][len:4][data]...
+   * 每块独立 IV + GCM 认证，峰值内存约 chunkSize
    */
   async function encryptData(data, password) {
     const { key, salt } = await deriveKey(password);
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const buf = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
-    const out = new Uint8Array(16 + 12 + buf.byteLength);
-    out.set(salt, 0); out.set(iv, 16); out.set(new Uint8Array(buf), 28);
+    const bytes = new Uint8Array(data);
+    const chunkCount = Math.ceil(bytes.length / CHUNK_SIZE);
+
+    // 预估总大小：salt + chunkCount + 每块(iv + len + ciphertext+tag)
+    const tagSize = 16; // GCM 认证标签
+    let totalSize = 16 + 4; // salt + chunkCount
+    const chunkSizes = [];
+    for (let i = 0; i < chunkCount; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, bytes.length);
+      chunkSizes.push(end - start);
+      totalSize += 12 + 4 + (end - start) + tagSize;
+    }
+
+    const out = new Uint8Array(totalSize);
+    out.set(salt, 0);
+    new DataView(out.buffer).setUint32(16, chunkCount, true);
+    let offset = 20;
+
+    for (let i = 0; i < chunkCount; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, bytes.length);
+      const chunk = bytes.slice(start, end);
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, chunk);
+      out.set(iv, offset); offset += 12;
+      new DataView(out.buffer).setUint32(offset, encrypted.byteLength, true); offset += 4;
+      out.set(new Uint8Array(encrypted), offset); offset += encrypted.byteLength;
+    }
+
     return out.buffer;
   }
 
   /**
-   * 解密 → 返回原始数据
+   * 分块解密
    */
   async function decryptData(packed, password) {
     const data = new Uint8Array(packed);
-    const { key } = await deriveKey(password, data.slice(0, 16));
-    return await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: data.slice(16, 28) }, key, data.slice(28)
-    );
+    const salt = data.slice(0, 16);
+    const { key } = await deriveKey(password, salt);
+    const chunkCount = new DataView(data.buffer).getUint32(16, true);
+
+    let offset = 20;
+    const chunks = [];
+    for (let i = 0; i < chunkCount; i++) {
+      const iv = data.slice(offset, offset + 12); offset += 12;
+      const len = new DataView(data.buffer).getUint32(offset, true); offset += 4;
+      const ciphertext = data.slice(offset, offset + len); offset += len;
+      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+      chunks.push(new Uint8Array(plain));
+    }
+
+    // 拼接所有块
+    const totalLen = chunks.reduce((s, c) => s + c.length, 0);
+    const result = new Uint8Array(totalLen);
+    let pos = 0;
+    for (const c of chunks) { result.set(c, pos); pos += c.length; }
+    return result.buffer;
   }
 
   // ============ 第 3 步：IndexedDB 存储模块 ============
@@ -936,11 +981,10 @@
 
   // ===== 初始化 =====
   openDB().then(() => {
-    console.log('📱 漫画阅读器 v2 — 全部功能就绪');
+    console.log('📱 漫画阅读器 v3 — 分块加密');
   });
 
-  // 版本号（显示在百度页脚，方便确认是否最新）
-  document.getElementById('searchInput').placeholder = '百度一下 · v2';
+  document.getElementById('searchInput').placeholder = '百度一下 · v3';
   document.getElementById('searchInput').focus();
   </script>
 </body>

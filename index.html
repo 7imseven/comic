@@ -270,7 +270,7 @@
     <div id="comicList" class="comic-list"></div>
     <button id="importBtn" class="import-btn-bottom">＋ 导入漫画</button>
     <input id="fileInput" type="file" accept=".zip,.cbz" style="display:none">
-    <input id="backupInput" type="file" accept=".json" style="display:none">
+    <input id="backupInput" type="file" accept=".cbackup,.json" style="display:none">
   </div>
 
   <!-- ========== 密码设置/输入页 ========== -->
@@ -646,11 +646,25 @@
     toast('✅ 备份已导出');
   }
 
-  /** 从备份文件导入漫画 */
+  /** 从备份文件导入漫画（兼容旧 JSON 和新二进制格式） */
   async function importBackup(file) {
     const buf = await file.arrayBuffer();
     const data = new Uint8Array(buf);
-    const view = new DataView(data.buffer);
+
+    // 检测格式：JSON 以 [ 开头
+    if (data[0] === 0x5B) {
+      const text = new TextDecoder().decode(data);
+      const list = JSON.parse(text);
+      for (const item of list) {
+        const coverBlob = item.cover ? base64ToBlob(item.cover, item.coverType || 'image/jpeg') : null;
+        const dataBlob = new Blob([base64ToBuf(item.data)]);
+        await saveComic(item.name, dataBlob, coverBlob);
+      }
+      return list.length;
+    }
+
+    // 新二进制格式
+    const view = new DataView(buf);
     const count = view.getUint32(0, true);
     let offset = 4;
     for (let i = 0; i < count; i++) {
@@ -1094,10 +1108,10 @@
 
   // ===== 初始化 =====
   openDB().then(() => {
-    console.log('📱 漫画阅读器 v5.3 — 大文件优化');
+    console.log('📱 漫画阅读器 v5.4 — 备份兼容');
   });
 
-  document.getElementById('searchInput').placeholder = '百度一下 · v5.3';
+  document.getElementById('searchInput').placeholder = '百度一下 · v5.4';
   document.getElementById('searchInput').focus();
   </script>
 </body>

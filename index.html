@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>百度一下，你就知道</title>
-<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='36' fill='%234e6ef2'/><text x='90' y='108' text-anchor='middle' font-size='62' font-weight='700' fill='white' font-family='Arial'>Baidu</text><text x='90' y='148' text-anchor='middle' font-size='30' fill='white' font-family='Arial'>百度</text></svg>">
+<link rel="apple-touch-icon" href="https://www.baidu.com/img/baidu_jgylogo3.gif">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; font-family: Arial, "PingFang SC", "Microsoft YaHei", sans-serif; }
@@ -14,25 +14,39 @@
   /* ===== 百度伪装首页 ===== */
   .baidu-page {
     display: flex; flex-direction: column; align-items: center;
-    padding-top: 18vh; height: 100%; background: #fff;
+    padding-top: 10vh; min-height: 100%; background: #fff;
   }
-  .baidu-logo {
-    width: 160px; margin-bottom: 28px;
-    display: flex; justify-content: center;
+  .baidu-logo-wrap {
+    width: 200px; height: 70px; margin-bottom: 20px;
+    display: flex; align-items: center; justify-content: center;
   }
-  .baidu-logo img { width: 130px; }
+  .baidu-logo-wrap img { width: 172px; height: auto; }
   .search-wrapper {
     width: 88%; max-width: 540px; position: relative;
   }
   .search-box {
-    width: 100%; height: 44px; padding: 0 50px 0 16px;
-    border: 1.5px solid #4e6ef2; border-radius: 22px;
-    font-size: 16px; outline: none; -webkit-appearance: none;
+    width: 100%; height: 42px; padding: 0 80px 0 14px;
+    border: 1px solid #ddd; border-radius: 8px;
+    font-size: 15px; outline: none; -webkit-appearance: none; background: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
   }
+  .search-box:focus { border-color: #4e6ef2; box-shadow: 0 1px 6px rgba(78,110,242,0.15); }
   .search-btn {
     position: absolute; right: 4px; top: 4px;
-    width: 62px; height: 36px; border: none; border-radius: 20px;
-    background: #4e6ef2; color: #fff; font-size: 15px; cursor: pointer;
+    width: 64px; height: 34px; border: none; border-radius: 7px;
+    background: #4e6ef2; color: #fff; font-size: 14px; cursor: pointer;
+  }
+  .baidu-links {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px;
+    margin-top: 20px; padding: 0 16px; max-width: 440px;
+  }
+  .baidu-links a {
+    font-size: 13px; color: #666; text-decoration: none;
+  }
+  .baidu-links a:hover { color: #4e6ef2; }
+  .baidu-footer {
+    text-align: center; padding: 30px 16px 40px;
+    font-size: 11px; color: #bbb; line-height: 1.8;
   }
 
   /* ===== 通用 ===== */
@@ -168,22 +182,44 @@
     animation: spin 0.8s linear infinite; margin-bottom: 12px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 话/章节分隔 */
+  .chapter-separator {
+    text-align: center; padding: 24px 0 12px; color: #4e6ef2;
+    font-size: 16px; font-weight: 700; letter-spacing: 2px; user-select: none;
+    border-bottom: 1px solid #333; margin: 0 16px 12px;
+  }
 </style>
 </head>
 <body>
 
   <!-- ========== 百度伪装首页 ========== -->
   <div id="baiduPage" class="baidu-page">
-    <div class="baidu-logo">
-      <!-- 百度 logo SVG -->
-      <svg viewBox="0 0 520 180" width="130" xmlns="http://www.w3.org/2000/svg">
-        <text x="0" y="135" font-size="160" font-weight="700" fill="#4e6ef2" font-family="Arial">Baidu</text>
-        <text x="270" y="140" font-size="50" fill="#4e6ef2" font-family="Arial">百度</text>
+    <div class="baidu-logo-wrap">
+      <img src="https://www.baidu.com/img/PCtm_d9c8750bed0b3c7d089fa7d55720d6cf.png" alt="百度" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <svg viewBox="0 0 520 140" width="172" xmlns="http://www.w3.org/2000/svg" style="display:none">
+        <text x="0" y="105" font-size="140" font-weight="700" fill="#2932e1" font-family="Arial">Baidu</text>
+        <text x="245" y="108" font-size="40" fill="#2932e1" font-family="Arial, sans-serif">百度</text>
       </svg>
     </div>
     <div class="search-wrapper">
-      <input id="searchInput" class="search-box" type="text" placeholder="输入搜索内容" autocomplete="off" autocorrect="off">
+      <input id="searchInput" class="search-box" type="text" placeholder="百度一下" autocomplete="off" autocorrect="off">
       <button id="searchBtn" class="search-btn">百度一下</button>
+    </div>
+    <div class="baidu-links">
+      <a href="https://news.baidu.com">新闻</a>
+      <a href="https://www.hao123.com">hao123</a>
+      <a href="https://map.baidu.com">地图</a>
+      <a href="https://tieba.baidu.com">贴吧</a>
+      <a href="https://haokan.baidu.com">视频</a>
+      <a href="https://image.baidu.com">图片</a>
+      <a href="https://pan.baidu.com">网盘</a>
+      <a href="https://wenku.baidu.com">文库</a>
+      <a href="https://www.baidu.com/more">更多</a>
+    </div>
+    <div class="baidu-footer">
+      ©2026 Baidu&nbsp;&nbsp;使用百度前必读&nbsp;&nbsp;京ICP证030173号<br>
+      京公网安备11000002000001号
     </div>
   </div>
 
@@ -665,79 +701,96 @@
       const comic = await getComic(id);
       document.getElementById('readerTitle').textContent = comic.name;
 
-      // 解密
       const zipBuf = await decryptData(comic.encryptedData, APP_PASSWORD);
-      // 解压
       const zip = await JSZip.loadAsync(zipBuf);
 
-      // 筛选图片文件，按文件名排序
       const imgExts = ['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
-      let imgFiles = Object.keys(zip.files).filter(name => {
-        const lower = name.toLowerCase();
-        return imgExts.some(ext => lower.endsWith(ext)) && !zip.files[name].dir;
-      }).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+      const isImg = name => imgExts.some(ext => name.toLowerCase().endsWith(ext)) && !zip.files[name].dir;
 
-      if (imgFiles.length === 0) {
+      // 收集所有图片，按路径排序
+      const allImgs = Object.keys(zip.files).filter(isImg)
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+      if (allImgs.length === 0) {
         document.getElementById('readerContent').innerHTML = '<div class="empty-state" style="color:#888;padding-top:40vh;"><p>😕 压缩包内未找到图片</p></div>';
         document.getElementById('readerLoading').classList.add('hidden');
         return;
       }
 
-      document.getElementById('pageIndicator').textContent = '0/' + imgFiles.length;
+      // 检测是否有子文件夹 → 按话分组
+      const hasFolders = allImgs.some(f => f.includes('/'));
+      let chapters;
+      if (hasFolders) {
+        // 按文件夹分组
+        const groups = {};
+        allImgs.forEach(f => {
+          const parts = f.split('/');
+          const chap = parts.length > 1 ? parts.slice(0, -1).join(' / ') : '(根目录)';
+          if (!groups[chap]) groups[chap] = [];
+          groups[chap].push(f);
+        });
+        chapters = Object.entries(groups).map(([name, files]) => ({ name, files }));
+      } else {
+        // 单本：所有图片为一个组
+        chapters = [{ name: '', files: allImgs }];
+      }
 
-      // 按需加载：先提取全部 Blob URL，再渲染
+      let globalPage = 0;
+      const totalPages = allImgs.length;
+      document.getElementById('pageIndicator').textContent = '0/' + totalPages;
+
       currentPages = [];
       const content = document.getElementById('readerContent');
 
-      for (let i = 0; i < imgFiles.length; i++) {
-        const fname = imgFiles[i];
-        const blob = await zip.files[fname].async('blob');
-        const url = URL.createObjectURL(blob);
-        currentPages.push({ blobUrl: url, index: i, name: fname });
+      for (const chap of chapters) {
+        // 有文件夹时显示话标题
+        if (chap.name) {
+          const chapSep = document.createElement('div');
+          chapSep.className = 'chapter-separator';
+          chapSep.textContent = chap.name;
+          content.appendChild(chapSep);
+        }
 
-        const sep = document.createElement('div');
-        sep.className = 'page-separator';
-        sep.textContent = '第 ' + (i + 1) + ' 页';
-        sep.dataset.page = i + 1;
-        content.appendChild(sep);
+        for (const fname of chap.files) {
+          globalPage++;
+          const blob = await zip.files[fname].async('blob');
+          const url = URL.createObjectURL(blob);
+          currentPages.push({ blobUrl: url, index: globalPage - 1, name: fname });
 
-        const wrap = document.createElement('div');
-        wrap.className = 'page-img-wrap';
-        wrap.dataset.page = i + 1;
-        const img = document.createElement('img');
-        img.className = 'page-img';
-        img.src = url;
-        img.alt = '第' + (i + 1) + '页';
-        img.loading = 'lazy';
+          const sep = document.createElement('div');
+          sep.className = 'page-separator';
+          sep.textContent = '第 ' + globalPage + ' 页';
+          sep.dataset.page = globalPage;
+          content.appendChild(sep);
 
-        // 双击缩放
-        img.addEventListener('dblclick', (e) => {
-          e.preventDefault();
-          toggleZoom(wrap, img);
-        });
-
-        wrap.appendChild(img);
-        content.appendChild(wrap);
+          const wrap = document.createElement('div');
+          wrap.className = 'page-img-wrap';
+          wrap.dataset.page = globalPage;
+          const img = document.createElement('img');
+          img.className = 'page-img';
+          img.src = url;
+          img.alt = '第' + globalPage + '页';
+          img.loading = 'lazy';
+          img.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            toggleZoom(wrap, img);
+          });
+          wrap.appendChild(img);
+          content.appendChild(wrap);
+        }
       }
 
       document.getElementById('readerLoading').classList.add('hidden');
 
-      // 恢复阅读进度
-      if (comic.progress > 0 && comic.progress <= imgFiles.length) {
+      if (comic.progress > 0 && comic.progress <= totalPages) {
         const targetSep = document.querySelector(`.page-separator[data-page="${comic.progress}"]`);
-        if (targetSep) {
-          setTimeout(() => targetSep.scrollIntoView({ behavior: 'instant' }), 100);
-        }
+        if (targetSep) setTimeout(() => targetSep.scrollIntoView({ behavior: 'instant' }), 100);
       }
 
-      // 进度追踪
-      setupProgressTracking(id, imgFiles.length);
+      setupProgressTracking(id, totalPages);
 
-      // 点击空白区域切换顶栏
       document.getElementById('readerContent').onclick = function(e) {
-        if (e.target === this) {
-          document.getElementById('readerTopbar').classList.toggle('hidden-bar');
-        }
+        if (e.target === this) document.getElementById('readerTopbar').classList.toggle('hidden-bar');
       };
 
     } catch (err) {
@@ -855,7 +908,7 @@
       display: 'standalone',
       background_color: '#ffffff',
       theme_color: '#ffffff',
-      icons: [{ src: 'data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 180 180%27><rect width=%27180%27 height=%27180%27 rx=%2736%27 fill=%27%234e6ef2%27/><text x=%2790%27 y=%27108%27 text-anchor=%27middle%27 font-size=%2762%27 font-weight=%27700%27 fill=%27white%27 font-family=%27Arial%27>Baidu</text><text x=%2790%27 y=%27148%27 text-anchor=%27middle%27 font-size=%2730%27 fill=%27white%27 font-family=%27Arial%27>百度</text></svg>', sizes: '180x180', type: 'image/svg+xml' }]
+      icons: [{ src: 'https://www.baidu.com/img/baidu_jgylogo3.gif', sizes: '180x180', type: 'image/gif' }]
     };
     const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
     const link = document.createElement('link');

@@ -918,7 +918,10 @@
 
       currentPages = [];
       const content = document.getElementById('readerContent');
+      const visibleImgs = new Map(); // 已加载的图片 Blob URL
+      const LOAD_AHEAD = 15; // 前后各预加载 15 张
 
+      // 先创建所有占位 DOM（不加载图片）
       for (let ci = 0; ci < currentChapters.length; ci++) {
         const chap = currentChapters[ci];
         if (chap.name) {
@@ -931,22 +934,21 @@
 
         for (const fname of chap.files) {
           globalPage++;
-          const blob = await zip.files[fname].async('blob');
-          const url = URL.createObjectURL(blob);
-          currentPages.push({ blobUrl: url, index: globalPage - 1, name: fname });
           const sep = document.createElement('div');
           sep.className = 'page-separator';
           sep.textContent = '第 ' + globalPage + ' 页';
           sep.dataset.page = globalPage;
           content.appendChild(sep);
+
           const wrap = document.createElement('div');
           wrap.className = 'page-img-wrap';
           wrap.dataset.page = globalPage;
           const img = document.createElement('img');
           img.className = 'page-img';
-          img.src = url;
+          img.dataset.fname = fname;
+          img.dataset.page = globalPage;
+          img.src = ''; // 稍后按需加载
           img.alt = '第' + globalPage + '页';
-          img.loading = 'lazy';
           img.addEventListener('dblclick', (e) => {
             e.preventDefault();
             toggleZoom(wrap, img);
@@ -964,10 +966,50 @@
         }
       }
 
-      document.getElementById('readerLoading').classList.add('hidden');
+      // 按需加载 + 远图回收
+      const lazyObs = new IntersectionObserver(entries => {
+        const toLoad = new Set();
+        const toFree = new Set();
+        entries.forEach(e => {
+          const page = parseInt(e.target.dataset.page);
+          if (e.isIntersecting) {
+            // 加载当前及前后各 LOAD_AHEAD 张
+            for (let p = page - LOAD_AHEAD; p <= page + LOAD_AHEAD; p++) {
+              if (p >= 1 && p <= totalPages) toLoad.add(p);
+            }
+          }
+        });
+        // 回收太远的图
+        if (toLoad.size > 0) {
+          const minLoad = Math.min(...toLoad);
+          const maxLoad = Math.max(...toLoad);
+          visibleImgs.forEach((url, page) => {
+            if (page < minLoad - 5 || page > maxLoad + 5) toFree.add(page);
+          });
+        }
+        toFree.forEach(p => {
+          const el = document.querySelector(`img[data-page="${p}"]`);
+          if (el) { URL.revokeObjectURL(el.src); el.src = ''; }
+          visibleImgs.delete(p);
+        });
+        toLoad.forEach(p => {
+          if (visibleImgs.has(p)) return;
+          const el = document.querySelector(`img[data-page="${p}"]`);
+          if (!el || el.src) return;
+          const fname = el.dataset.fname;
+          zip.files[fname].async('blob').then(blob => {
+            const url = URL.createObjectURL(blob);
+            el.src = url;
+            visibleImgs.set(p, url);
+          }).catch(() => {});
+        });
+      }, { rootMargin: '200px' });
 
-      // 释放 ZIP 引用，减小内存压力
-      rawBlob = null; zip = null;
+      document.querySelectorAll('.page-img-wrap').forEach(el => lazyObs.observe(el));
+      currentPages.push({ lazyObs });
+
+      document.getElementById('readerLoading').classList.add('hidden');
+      rawBlob = null; // ZIP 仍需保留用于按需解压
 
       if (comic.progress > 0 && comic.progress <= totalPages) {
         const targetSep = document.querySelector(`.page-separator[data-page="${comic.progress}"]`);
@@ -986,7 +1028,7 @@
     } catch (err) {
       document.getElementById('readerLoading').classList.add('hidden');
       document.getElementById('readerContent').innerHTML =
-        '<div class="empty-state" style="color:#e74c3c;padding-top:40vh;"><p>❌ 加载失败<br><small>数据损坏或不完整</small></p></div>';
+        '<div class="empty-state" style="color:#e74c3c;padding-top:40vh;"><p>❌ 加载失败<br><small>' + (err.message || err) + '</small></p></div>';
       console.error(err);
     }
   }
@@ -1038,8 +1080,10 @@
     if (currentComicId && currentProgress > 0) {
       updateProgress(currentComicId, currentProgress).catch(() => {});
     }
-    // 清理 Blob URL 并清空 DOM 释放内存
-    currentPages.forEach(p => URL.revokeObjectURL(p.blobUrl));
+    // 断开懒加载观察器并清空 DOM
+    if (currentPages.length > 0 && currentPages[0].lazyObs) {
+      currentPages[0].lazyObs.disconnect();
+    }
     currentPages = [];
     document.getElementById('readerContent').innerHTML = '';
     document.getElementById('scrollbar').classList.remove('visible');

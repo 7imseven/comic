@@ -270,7 +270,7 @@
     <div id="comicList" class="comic-list"></div>
     <button id="importBtn" class="import-btn-bottom">＋ 导入漫画</button>
     <input id="fileInput" type="file" accept=".zip,.cbz" style="display:none">
-    <input id="backupInput" type="file" accept=".cbackup,.json" style="display:none">
+    <input id="backupInput" type="file" style="display:none">
   </div>
 
   <!-- ========== 密码设置/输入页 ========== -->
@@ -651,21 +651,26 @@
     const buf = await file.arrayBuffer();
     const data = new Uint8Array(buf);
 
-    // 检测格式：JSON 以 [ 开头
-    if (data[0] === 0x5B) {
+    // 先尝试 JSON 格式
+    try {
       const text = new TextDecoder().decode(data);
-      const list = JSON.parse(text);
-      for (const item of list) {
-        const coverBlob = item.cover ? base64ToBlob(item.cover, item.coverType || 'image/jpeg') : null;
-        const dataBlob = new Blob([base64ToBuf(item.data)]);
-        await saveComic(item.name, dataBlob, coverBlob);
+      if (text.trim()[0] === '[') {
+        const list = JSON.parse(text);
+        if (Array.isArray(list)) {
+          for (const item of list) {
+            const coverBlob = item.cover ? base64ToBlob(item.cover, item.coverType || 'image/jpeg') : null;
+            const dataBlob = new Blob([base64ToBuf(item.data)]);
+            await saveComic(item.name, dataBlob, coverBlob);
+          }
+          return list.length;
+        }
       }
-      return list.length;
-    }
+    } catch {}
 
-    // 新二进制格式
+    // 二进制格式
     const view = new DataView(buf);
     const count = view.getUint32(0, true);
+    if (count < 0 || count > 5000) throw new Error('不支持的文件格式');
     let offset = 4;
     for (let i = 0; i < count; i++) {
       const nameLen = view.getUint32(offset, true); offset += 4;

@@ -451,7 +451,8 @@
   // ============ 第 3 步：IndexedDB 存储模块 ============
 
   const DB_NAME = 'ComicVault';
-  const DB_VER = 2;
+  const DB_VER = 3;
+  const DATA_CHUNK = 16 * 1024 * 1024; // 16MB 每块存入 IndexedDB
   let db = null;
   let dbPromise = null;
 
@@ -459,8 +460,8 @@
     if (dbPromise) return dbPromise;
     dbPromise = new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VER);
-      req.onupgradeneeded = () => {
-        const idb = req.result;
+      req.onupgradeneeded = (e) => {
+        const idb = e.target.result;
         if (!idb.objectStoreNames.contains('comics')) {
           const store = idb.createObjectStore('comics', { keyPath: 'id', autoIncrement: true });
           store.createIndex('addedAt', 'addedAt');
@@ -468,16 +469,74 @@
         if (!idb.objectStoreNames.contains('settings')) {
           idb.createObjectStore('settings', { keyPath: 'key' });
         }
+        if (!idb.objectStoreNames.contains('chunks')) {
+          idb.createObjectStore('chunks', { keyPath: 'key' });
+        }
       };
       req.onsuccess = () => {
         db = req.result;
-        // 连接意外关闭时重置，下次自动重连
         db.onclose = () => { db = null; dbPromise = null; };
         resolve(db);
       };
       req.onerror = () => { dbPromise = null; reject(req.error); };
     });
     return dbPromise;
+  }
+
+  /** 保存漫画（加密数据拆成小块） */
+  async function saveComic(name, encryptedBlob, coverBlob) {
+    return withDB(async db => {
+      // 写入元数据
+      const meta = { name, cover: coverBlob, addedAt: Date.now(), progress: 0, dataSize: encryptedBlob.size, chunkCount: 0 };
+      const metaReq = db.transaction('comics', 'readwrite').objectStore('comics').add(meta);
+      const comicId = await new Promise((resolve, reject) => {
+        metaReq.onsuccess = () => resolve(metaReq.result);
+        metaReq.onerror = () => reject(metaReq.error);
+      });
+
+      // 拆分并写入数据块
+      const chunkCount = Math.ceil(encryptedBlob.size / DATA_CHUNK);
+      const chunkTx = db.transaction('chunks', 'readwrite');
+      const chunkStore = chunkTx.objectStore('chunks');
+      for (let i = 0; i < chunkCount; i++) {
+        const start = i * DATA_CHUNK;
+        const end = Math.min(start + DATA_CHUNK, encryptedBlob.size);
+        chunkStore.add({ key: comicId + '_' + i, data: encryptedBlob.slice(start, end) });
+      }
+      await new Promise((resolve, reject) => {
+        chunkTx.oncomplete = resolve;
+        chunkTx.onerror = () => reject(chunkTx.error);
+      });
+
+      // 更新元数据中的块数
+      meta.chunkCount = chunkCount;
+      meta.id = comicId;
+      await new Promise((resolve, reject) => {
+        const req2 = db.transaction('comics', 'readwrite').objectStore('comics').put(meta);
+        req2.onsuccess = resolve;
+        req2.onerror = () => reject(req2.error);
+      });
+      return comicId;
+    });
+  }
+
+  /** 获取漫画加密数据（从块组装成 Blob） */
+  async function getComicData(comicId, chunkCount) {
+    return withDB(db => new Promise((resolve, reject) => {
+      const tx = db.transaction('chunks', 'readonly');
+      const store = tx.objectStore('chunks');
+      const blobs = [];
+      let loaded = 0;
+      for (let i = 0; i < chunkCount; i++) {
+        const req = store.get(comicId + '_' + i);
+        req.onsuccess = () => {
+          if (req.result) blobs[i] = req.result.data;
+          loaded++;
+          if (loaded === chunkCount) resolve(new Blob(blobs));
+        };
+        req.onerror = () => reject(req.error);
+      }
+    }));
   }
 
   /** 读取设置 */
@@ -528,18 +587,7 @@
     }
   }
 
-  /** 保存一条漫画记录（加密后的数据） */
-  async function saveComic(name, encryptedBuf, coverBlob) {
-    return withDB(db => new Promise((resolve, reject) => {
-      const tx = db.transaction('comics', 'readwrite');
-      const rec = { name, encryptedData: encryptedBuf, cover: coverBlob, addedAt: Date.now(), progress: 0 };
-      const req = tx.objectStore('comics').add(rec);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    }));
-  }
-
-  /** 获取所有漫画列表 */
+  /** 获取所有漫画列表（仅元数据） */
   async function getAllComics() {
     return withDB(db => new Promise((resolve, reject) => {
       const req = db.transaction('comics', 'readonly').objectStore('comics').getAll();
@@ -557,28 +605,37 @@
     }));
   }
 
-  /** 更新阅读进度 */
+  /** 更新阅读进度（仅元数据，不碰加密数据） */
   async function updateProgress(id, progress) {
-    return withDB(async db => {
-      const comic = await getComic(id);
-      comic.progress = progress;
-      // 防止 Blob 引用失效：用 slice(0) 创建新引用
-      comic.encryptedData = comic.encryptedData.slice(0);
-      if (comic.cover) comic.cover = comic.cover.slice(0);
-      return new Promise((resolve, reject) => {
-        const req = db.transaction('comics', 'readwrite').objectStore('comics').put(comic);
-        req.onsuccess = () => resolve();
-        req.onerror = () => reject(req.error);
-      });
-    });
+    return withDB(db => new Promise((resolve, reject) => {
+      const tx = db.transaction('comics', 'readwrite');
+      const req = tx.objectStore('comics').get(id);
+      req.onsuccess = () => {
+        const comic = req.result;
+        if (!comic) { resolve(); return; }
+        comic.progress = progress;
+        tx.objectStore('comics').put(comic);
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    }));
   }
 
-  /** 删除漫画 */
+  /** 删除漫画（同时清理数据块） */
   async function deleteComic(id) {
+    const comic = await getComic(id);
+    if (!comic) return;
     return withDB(db => new Promise((resolve, reject) => {
-      const req = db.transaction('comics', 'readwrite').objectStore('comics').delete(id);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(req.error);
+      // 删除元数据
+      const tx = db.transaction(['comics', 'chunks'], 'readwrite');
+      tx.objectStore('comics').delete(id);
+      // 删除数据块
+      const chunkStore = tx.objectStore('chunks');
+      for (let i = 0; i < (comic.chunkCount || 0); i++) {
+        chunkStore.delete(id + '_' + i);
+      }
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
     }));
   }
 
@@ -616,41 +673,31 @@
     return new Blob([bytes], { type });
   }
 
-  /** 导出所有漫画为加密备份文件（分段格式：头部+数据区） */
+  /** 导出所有漫画为加密备份文件（分段格式：头部+数据区，不占内存） */
   async function exportBackup() {
     const comics = await getAllComics();
     if (comics.length === 0) { toast('没有漫画可导出'); return; }
     toast('正在打包...');
 
-    // 先算头部：count(4) + headerSize(4) + 每本(nameLen+name+dataLen)
+    // 头部：count(4) + headerSize(4) + 每本(nameLen+name+dataLen)
     let headerSize = 8;
-    const entries = [];
     for (const c of comics) {
-      const nameBytes = new TextEncoder().encode(c.name);
-      entries.push({ nameBytes, nameLen: nameBytes.length, dataLen: 0 });
-      headerSize += 4 + nameBytes.length + 4;
+      headerSize += 4 + (new TextEncoder().encode(c.name)).length + 4;
     }
-
-    // 收集数据，填充实际长度
-    const dataParts = [];
-    let dataOffset = 0;
-    for (let i = 0; i < comics.length; i++) {
-      const dataBuf = new Uint8Array(await comics[i].encryptedData.arrayBuffer());
-      entries[i].dataLen = dataBuf.length;
-      dataParts.push(dataBuf);
-      dataOffset += dataBuf.length;
-    }
-
-    // 构建头部
     const headerBuf = new Uint8Array(headerSize);
     const hv = new DataView(headerBuf.buffer);
     hv.setUint32(0, comics.length, true);
     hv.setUint32(4, headerSize, true);
+
+    // 直接拿 Blob，不用 arrayBuffer 读全量
+    const dataParts = [];
     let off = 8;
-    for (const e of entries) {
-      hv.setUint32(off, e.nameLen, true); off += 4;
-      headerBuf.set(e.nameBytes, off); off += e.nameLen;
-      hv.setUint32(off, e.dataLen, true); off += 4;
+    for (const c of comics) {
+      const nameBytes = new TextEncoder().encode(c.name);
+      hv.setUint32(off, nameBytes.length, true); off += 4;
+      headerBuf.set(nameBytes, off); off += nameBytes.length;
+      hv.setUint32(off, c.encryptedData.size, true); off += 4;
+      dataParts.push(c.encryptedData);
     }
 
     const blob = new Blob([headerBuf, ...dataParts], { type: 'application/octet-stream' });
@@ -858,7 +905,9 @@
       const comic = await getComic(id);
       document.getElementById('readerTitle').textContent = comic.name;
 
-      const zipBuf = await decryptBlob(comic.encryptedData, APP_PASSWORD);
+      // 从分块存储组装加密数据
+      const encBlob = await getComicData(id, comic.chunkCount || 1);
+      const zipBuf = await decryptBlob(encBlob, APP_PASSWORD);
       const zip = await loadZipSafe(zipBuf);
 
       const imgExts = ['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
